@@ -7,8 +7,8 @@ auto_reconnect = false
 num = 5
 team = kanolab
 
-[path]
-random_talk = ./resource/2019071_44011_AIWolfTalkLogs.txt
+[gemini]
+api_key = PASTE_KEY_HERE
 
 [log]
 console_output = true

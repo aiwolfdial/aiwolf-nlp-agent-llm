@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from time import sleep
 from typing import TYPE_CHECKING
 
 from utils import agent_util
@@ -12,11 +12,16 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from utils.agent_logger import AgentLogger
+    
+    from google.genai import Client
+    from google.genai.chats import Chat
 
 import random
 from threading import Thread
 
 from aiwolf_nlp_common.packet import Info, Packet, Request, Role, Setting, Status, Talk
+from google import genai
+from google.genai.types import Part, UserContent
 
 
 class Agent:
@@ -40,13 +45,10 @@ class Agent:
         self.idx: int = -1
         self.role: Role | None = None
 
-        self.comments: list[str] = []
-        if self.config is not None:
-            with Path.open(
-                Path(self.config.get("path", "random_talk")),
-                encoding="utf-8",
-            ) as f:
-                self.comments = f.read().splitlines()
+        self.client: Client | None = None
+        self.chat: Chat | None
+        self.sent_talk_count: int = 0
+        self.sent_whisper_count: int = 0
 
     @staticmethod
     def timeout(func: Callable) -> Callable:
@@ -133,6 +135,23 @@ class Agent:
 
     def initialize(self) -> None:
         """ゲーム開始リクエストに対する初期化処理を行う."""
+        if self.config is None or self.info is None:
+            return
+        self.client = genai.Client(api_key=self.config.get("gemini", "api_key"))
+        self.chat = self.client.chats.create(model=self.config.get("gemini", "model"))
+        self.chat.send_message(
+            f"""
+            あなたは人狼ゲームのエージェントです。
+            あなたの名前は{self.info.agent}です。
+            あなたの役職は{self.role}です。
+
+            これからゲームを進行していきます。リクエストが来た際には、適切な応答を返してください。
+            トークリクエストと囁きリクエストに対しては、ゲーム内で発言するべき内容のみを出力してください。
+            他のリクエストに対しては、行動の対象となるエージェントの名前のみを出力してください。
+
+            説明は以上です。「はい」と出力してください。
+            """,
+        )
 
     def daily_initialize(self) -> None:
         """昼開始リクエストに対する処理を行う."""
@@ -140,12 +159,40 @@ class Agent:
     @timeout
     def whisper(self) -> str:
         """囁きリクエストに対する応答を返す."""
-        return random.choice(self.comments)  # noqa: S311
+        if self.chat is None:
+            return ""
+        message = f"""
+        囁きリクエスト
+        履歴:
+        {"\n".join(
+            [
+                f"{w.agent}: {w.text}"
+                for w in self.whisper_history[self.sent_whisper_count :]
+            ]
+        )}
+        """
+        sleep(10)
+        self.sent_whisper_count = len(self.whisper_history)
+        return self.chat.send_message(message).text or ""
 
     @timeout
     def talk(self) -> str:
         """トークリクエストに対する応答を返す."""
-        return random.choice(self.comments)  # noqa: S311
+        if self.chat is None:
+            return ""
+        message = f"""
+        トークリクエスト
+        履歴:
+        {"\n".join(
+            [
+                f"{t.agent}: {t.text}"
+                for t in self.talk_history[self.sent_talk_count :]
+            ]
+        )}
+        """
+        sleep(10)
+        self.sent_talk_count = len(self.talk_history)
+        return self.chat.send_message(message).text or ""
 
     def daily_finish(self) -> None:
         """昼終了リクエストに対する処理を行う."""
@@ -154,37 +201,85 @@ class Agent:
     @send_agent_index
     def divine(self) -> int:
         """占いリクエストに対する応答を返す."""
-        target: int = agent_util.agent_name_to_idx(
-            name=random.choice(self.get_alive_agents()),  # noqa: S311
+        if self.chat is None:
+            return agent_util.agent_name_to_idx(
+                name=random.choice(self.get_alive_agents()),  # noqa: S311
+            )
+        message = f"""
+        占いリクエスト
+        対象:
+        {"\n".join(self.get_alive_agents())}
+        """
+        sleep(10)
+        return agent_util.agent_name_to_idx(
+            self.chat.send_message(message).text
+            or random.choice(  # noqa: S311
+                self.get_alive_agents(),
+            ),
         )
-        return target
 
     @timeout
     @send_agent_index
     def guard(self) -> int:
         """護衛リクエストに対する応答を返す."""
-        target: int = agent_util.agent_name_to_idx(
-            name=random.choice(self.get_alive_agents()),  # noqa: S311
+        if self.chat is None:
+            return agent_util.agent_name_to_idx(
+                name=random.choice(self.get_alive_agents()),  # noqa: S311
+            )
+        message = f"""
+        護衛リクエスト
+        対象:
+        {"\n".join(self.get_alive_agents())}
+        """
+        sleep(10)
+        return agent_util.agent_name_to_idx(
+            self.chat.send_message(message).text
+            or random.choice(  # noqa: S311
+                self.get_alive_agents(),
+            ),
         )
-        return target
 
     @timeout
     @send_agent_index
     def vote(self) -> int:
         """投票リクエストに対する応答を返す."""
-        target: int = agent_util.agent_name_to_idx(
-            name=random.choice(self.get_alive_agents()),  # noqa: S311
+        if self.chat is None:
+            return agent_util.agent_name_to_idx(
+                name=random.choice(self.get_alive_agents()),  # noqa: S311
+            )
+        message = f"""
+        投票リクエスト
+        対象:
+        {"\n".join(self.get_alive_agents())}
+        """
+        sleep(10)
+        return agent_util.agent_name_to_idx(
+            self.chat.send_message(message).text
+            or random.choice(  # noqa: S311
+                self.get_alive_agents(),
+            ),
         )
-        return target
 
     @timeout
     @send_agent_index
     def attack(self) -> int:
         """襲撃リクエストに対する応答を返す."""
-        target: int = agent_util.agent_name_to_idx(
-            name=random.choice(self.get_alive_agents()),  # noqa: S311
+        if self.chat is None:
+            return agent_util.agent_name_to_idx(
+                name=random.choice(self.get_alive_agents()),  # noqa: S311
+            )
+        message = f"""
+        襲撃リクエスト
+        対象:
+        {"\n".join(self.get_alive_agents())}
+        """
+        sleep(10)
+        return agent_util.agent_name_to_idx(
+            self.chat.send_message(message).text
+            or random.choice(  # noqa: S311
+                self.get_alive_agents(),
+            ),
         )
-        return target
 
     def finish(self) -> None:
         """ゲーム終了リクエストに対する処理を行う."""
