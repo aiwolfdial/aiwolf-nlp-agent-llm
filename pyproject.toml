@@ -2,7 +2,7 @@
 name = "aiwolf-nlp-agent-llm"
 version = "0.3.6"
 dependencies = [
-    "aiwolf-nlp-common==0.6.7",
+    "aiwolf-nlp-common==0.6.10",
     "python-ulid>=3.0.0",
     "pyyaml>=6.0.2",
     "jinja2>=3.1.6",
@@ -10,6 +10,7 @@ dependencies = [
     "langchain-openai>=0.3.9",
     "langchain-ollama>=0.3.0",
     "python-dotenv>=1.1.0",
+    "requests>=2.32.4",
 ]
 requires-python = ">=3.11"
 authors = [
