@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import random
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
@@ -16,6 +18,7 @@ from utils.stoppable_thread import StoppableThread
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from aiwolf_nlp_common.client import Client
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -53,6 +56,14 @@ class Agent:
         self.talk_history: list[Talk] = []
         self.whisper_history: list[Talk] = []
         self.role = role
+
+        # グループチャット方式用のフィールド
+        self.in_talk_phase = False
+        self.in_whisper_phase = False
+        self.last_talk_time = 0.0
+        self.last_whisper_time = 0.0
+        self.talk_interval_min = 1.0  # 最小発言間隔（秒）
+        self.talk_interval_max = 3.0  # 最大発言間隔（秒）
 
         self.comments: list[str] = []
         with Path.open(
@@ -128,6 +139,15 @@ class Agent:
             self.talk_history.extend(packet.talk_history)
         if packet.whisper_history:
             self.whisper_history.extend(packet.whisper_history)
+
+        # 新着トークの処理（グループチャット方式用）
+        if packet.new_talk:
+            self.talk_history.append(packet.new_talk)
+            self.on_talk_received(packet.new_talk)
+        if packet.new_whisper:
+            self.whisper_history.append(packet.new_whisper)
+            self.on_whisper_received(packet.new_whisper)
+
         if self.request == Request.INITIALIZE:
             self.talk_history: list[Talk] = []
             self.whisper_history: list[Talk] = []
@@ -144,6 +164,178 @@ class Agent:
         if not self.info:
             return []
         return [k for k, v in self.info.status_map.items() if v == Status.ALIVE]
+
+    def on_talk_received(self, talk: Talk) -> None:
+        """Called when a new talk is received (freeform mode).
+
+        新しいトークを受信した時に呼ばれる（グループチャット方式用）.
+
+        Args:
+            talk (Talk): Received talk / 受信したトーク
+        """
+
+    def on_whisper_received(self, whisper: Talk) -> None:
+        """Called when a new whisper is received (freeform mode).
+
+        新しい囁きを受信した時に呼ばれる（グループチャット方式用）.
+
+        Args:
+            whisper (Talk): Received whisper / 受信した囁き
+        """
+
+    async def handle_talk_phase(self, client: Client) -> None:
+        """Handle talk phase in freeform mode.
+
+        グループチャット方式でのトークフェーズ処理.
+
+        Args:
+            client (Client): Client instance / クライアントインスタンス
+        """
+        self.agent_logger.logger.info("トークフェーズの処理を開始します")
+
+        while self.in_talk_phase:
+            # 残り回数チェック
+            if self.info and self.info.remain_count <= 0:
+                # Overを送信して終了
+                client.send("Over")
+                self.agent_logger.logger.info("残り回数が0のためOverを送信しました")
+                break
+
+            # トーク送信判断
+            if self.should_send_talk():
+                try:
+                    # タイムアウト付きでトーク生成
+                    text = await asyncio.wait_for(
+                        self.generate_talk_async(),
+                        timeout=10.0,
+                    )
+
+                    if text and text.strip():
+                        client.send(text)
+                        self.last_talk_time = time.time()
+                        self.agent_logger.logger.info("トークを送信しました: %s", text)
+
+                        # Overを送った場合は終了
+                        if text.strip() == "Over":
+                            self.agent_logger.logger.info("Overを送信したため終了します")
+                            break
+
+                except asyncio.TimeoutError:
+                    self.agent_logger.logger.warning("トーク生成がタイムアウトしました")
+                except Exception as e:  # noqa: BLE001
+                    self.agent_logger.logger.error("トーク生成中にエラーが発生しました: %s", e)
+
+            # 次のチェックまで待機
+            await asyncio.sleep(0.1)
+
+        self.agent_logger.logger.info("トークフェーズの処理を終了しました")
+
+    async def handle_whisper_phase(self, client: Client) -> None:
+        """Handle whisper phase in freeform mode.
+
+        グループチャット方式での囁きフェーズ処理.
+
+        Args:
+            client (Client): Client instance / クライアントインスタンス
+        """
+        self.agent_logger.logger.info("囁きフェーズの処理を開始します")
+
+        while self.in_whisper_phase:
+            # 残り回数チェック
+            if self.info and self.info.remain_count <= 0:
+                # Overを送信して終了
+                client.send("Over")
+                self.agent_logger.logger.info("残り回数が0のためOverを送信しました")
+                break
+
+            # 囁き送信判断
+            if self.should_send_whisper():
+                try:
+                    # タイムアウト付きで囁き生成
+                    text = await asyncio.wait_for(
+                        self.generate_whisper_async(),
+                        timeout=10.0,
+                    )
+
+                    if text and text.strip():
+                        client.send(text)
+                        self.last_whisper_time = time.time()
+                        self.agent_logger.logger.info("囁きを送信しました: %s", text)
+
+                        # Overを送った場合は終了
+                        if text.strip() == "Over":
+                            self.agent_logger.logger.info("Overを送信したため終了します")
+                            break
+
+                except asyncio.TimeoutError:
+                    self.agent_logger.logger.warning("囁き生成がタイムアウトしました")
+                except Exception as e:  # noqa: BLE001
+                    self.agent_logger.logger.error("囁き生成中にエラーが発生しました: %s", e)
+
+            # 次のチェックまで待機
+            await asyncio.sleep(0.1)
+
+        self.agent_logger.logger.info("囁きフェーズの処理を終了しました")
+
+    def should_send_talk(self) -> bool:
+        """Determine whether to send a talk.
+
+        トークを送信するべきか判断する.
+
+        Returns:
+            bool: True if should send talk / トークを送信する場合True
+        """
+        # 最小間隔チェック
+        elapsed = time.time() - self.last_talk_time
+        if elapsed < self.talk_interval_min:
+            return False
+
+        # ランダムなタイミング（最大間隔を超えたら高確率で送信）
+        if elapsed > self.talk_interval_max:
+            return random.random() < 0.8  # noqa: S311
+
+        # 一定確率で送信
+        return random.random() < 0.2  # noqa: S311
+
+    def should_send_whisper(self) -> bool:
+        """Determine whether to send a whisper.
+
+        囁きを送信するべきか判断する.
+
+        Returns:
+            bool: True if should send whisper / 囁きを送信する場合True
+        """
+        # トークと同じロジック
+        elapsed = time.time() - self.last_whisper_time
+        if elapsed < self.talk_interval_min:
+            return False
+
+        if elapsed > self.talk_interval_max:
+            return random.random() < 0.8  # noqa: S311
+
+        return random.random() < 0.2  # noqa: S311
+
+    async def generate_talk_async(self) -> str:
+        """Generate talk asynchronously.
+
+        トークを非同期生成する.
+
+        Returns:
+            str: Generated talk / 生成されたトーク
+        """
+        # デフォルト実装：既存のtalk()を呼ぶ
+        return await asyncio.to_thread(self.talk)
+
+    async def generate_whisper_async(self) -> str:
+        """Generate whisper asynchronously.
+
+        囁きを非同期生成する.
+
+        Returns:
+            str: Generated whisper / 生成された囁き
+        """
+        # デフォルト実装：既存のwhisper()を呼ぶ
+        return await asyncio.to_thread(self.whisper)
 
     def name(self) -> str:
         """Return response to name request.
