@@ -133,6 +133,10 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
         match packet.request:
             # グループチャット方式
             case Request.TALK_PHASE_START:
+                if talk_task and not talk_task.done():
+                    talk_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await talk_task
                 agent.in_talk_phase = True
                 talk_task = asyncio.create_task(agent.handle_talk_phase(send_with_lock))
             case Request.TALK_PHASE_END:
@@ -141,7 +145,12 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
                     talk_task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await talk_task
+                talk_task = None
             case Request.WHISPER_PHASE_START:
+                if whisper_task and not whisper_task.done():
+                    whisper_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await whisper_task
                 agent.in_whisper_phase = True
                 whisper_task = asyncio.create_task(agent.handle_whisper_phase(send_with_lock))
             case Request.WHISPER_PHASE_END:
@@ -150,6 +159,7 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
                     whisper_task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await whisper_task
+                whisper_task = None
             case Request.TALK_BROADCAST | Request.WHISPER_BROADCAST:
                 pass
             case _:
