@@ -164,7 +164,8 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
                 pass
             case _:
                 # 従来のリクエスト処理
-                req = await asyncio.to_thread(agent.action)
+                # @timeoutデコレータ内でスレッドを使用しているため、asyncio.to_threadは不要
+                req = agent.action()
                 agent.agent_logger.packet(agent.request, req)
                 if req:
                     send_with_lock(req)
