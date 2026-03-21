@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 from utils.agent_utils import init_agent_from_packet
@@ -109,11 +111,17 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
     talk_task: asyncio.Task[None] | None = None
     whisper_task: asyncio.Task[None] | None = None
 
+    send_lock = threading.Lock()
+
+    def send_with_lock(text: str) -> None:
+        with send_lock:
+            client.send(text)
+
     while True:
         packet = await asyncio.to_thread(client.receive)
 
         if packet.request == Request.NAME:
-            client.send(name)
+            send_with_lock(name)
             continue
 
         if packet.request == Request.INITIALIZE:
@@ -126,34 +134,22 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
             # グループチャット方式
             case Request.TALK_PHASE_START:
                 agent.in_talk_phase = True
-                logger.info("トークフェーズが開始されました")
-                # 非同期でトーク送信処理を開始
-                talk_task = asyncio.create_task(agent.handle_talk_phase(client))
+                talk_task = asyncio.create_task(agent.handle_talk_phase(send_with_lock))
             case Request.TALK_PHASE_END:
                 agent.in_talk_phase = False
-                logger.info("トークフェーズが終了しました")
-                # トーク送信タスクをキャンセル
                 if talk_task and not talk_task.done():
                     talk_task.cancel()
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError):
                         await talk_task
-                    except asyncio.CancelledError:
-                        logger.info("トーク送信タスクをキャンセルしました")
             case Request.WHISPER_PHASE_START:
                 agent.in_whisper_phase = True
-                logger.info("囁きフェーズが開始されました")
-                # 非同期で囁き送信処理を開始
-                whisper_task = asyncio.create_task(agent.handle_whisper_phase(client))
+                whisper_task = asyncio.create_task(agent.handle_whisper_phase(send_with_lock))
             case Request.WHISPER_PHASE_END:
                 agent.in_whisper_phase = False
-                logger.info("囁きフェーズが終了しました")
-                # 囁き送信タスクをキャンセル
                 if whisper_task and not whisper_task.done():
                     whisper_task.cancel()
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError):
                         await whisper_task
-                    except asyncio.CancelledError:
-                        logger.info("囁き送信タスクをキャンセルしました")
             case Request.TALK_BROADCAST | Request.WHISPER_BROADCAST:
                 pass
             case _:
@@ -161,7 +157,7 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
                 req = await asyncio.to_thread(agent.action)
                 agent.agent_logger.packet(agent.request, req)
                 if req:
-                    client.send(req)
+                    send_with_lock(req)
 
         if packet.request == Request.FINISH:
             break

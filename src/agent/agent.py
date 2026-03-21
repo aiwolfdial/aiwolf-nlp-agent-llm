@@ -18,8 +18,6 @@ from utils.stoppable_thread import StoppableThread
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from aiwolf_nlp_common.client import Client
-
 P = ParamSpec("P")
 T = TypeVar("T")
 
@@ -136,7 +134,7 @@ class Agent:
         if packet.whisper_history:
             self.whisper_history.extend(packet.whisper_history)
 
-        # 新着トークの処理（グループチャット方式用）
+        # グループチャット方式
         if packet.new_talk:
             self.talk_history.append(packet.new_talk)
             self.on_talk_received(packet.new_talk)
@@ -164,7 +162,7 @@ class Agent:
     def on_talk_received(self, talk: Talk) -> None:
         """Called when a new talk is received (freeform mode).
 
-        新しいトークを受信した時に呼ばれる（グループチャット方式用）.
+        新しいトークを受信した時に呼ばれる (グループチャット方式用).
 
         Args:
             talk (Talk): Received talk / 受信したトーク
@@ -173,53 +171,53 @@ class Agent:
     def on_whisper_received(self, whisper: Talk) -> None:
         """Called when a new whisper is received (freeform mode).
 
-        新しい囁きを受信した時に呼ばれる（グループチャット方式用）.
+        新しい囁きを受信した時に呼ばれる (グループチャット方式用).
 
         Args:
             whisper (Talk): Received whisper / 受信した囁き
         """
 
-    async def handle_talk_phase(self, client: Client) -> None:
+    async def handle_talk_phase(self, send: Callable[[str], None]) -> None:
         """Handle talk phase in freeform mode.
 
         グループチャット方式でのトークフェーズ処理.
 
         Args:
-            client (Client): Client instance / クライアントインスタンス
+            send (Callable[[str], None]): Send function / 送信関数
         """
         while self.in_talk_phase:
             if self.info and self.info.remain_count is not None and self.info.remain_count <= 0:
                 if self.in_talk_phase:
-                    client.send("Over")
+                    send("Over")
                 break
 
             text = self.talk()
             if not self.in_talk_phase:
                 break
-            client.send(text)
+            send(text)
             if text.strip() == "Over":
                 break
 
             await asyncio.sleep(1.0)
 
-    async def handle_whisper_phase(self, client: Client) -> None:
+    async def handle_whisper_phase(self, send: Callable[[str], None]) -> None:
         """Handle whisper phase in freeform mode.
 
         グループチャット方式での囁きフェーズ処理.
 
         Args:
-            client (Client): Client instance / クライアントインスタンス
+            send (Callable[[str], None]): Send function / 送信関数
         """
         while self.in_whisper_phase:
             if self.info and self.info.remain_count is not None and self.info.remain_count <= 0:
                 if self.in_whisper_phase:
-                    client.send("Over")
+                    send("Over")
                 break
 
             text = self.whisper()
             if not self.in_whisper_phase:
                 break
-            client.send(text)
+            send(text)
             if text.strip() == "Over":
                 break
 
