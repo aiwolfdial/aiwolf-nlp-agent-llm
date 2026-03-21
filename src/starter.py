@@ -107,7 +107,7 @@ async def cancel_task(task: asyncio.Task[None] | None) -> None:
             await task
 
 
-async def handle_game_session_async(
+async def handle_game_session_async(  # noqa: C901
     client: Client,
     config: dict[str, Any],
     name: str,
