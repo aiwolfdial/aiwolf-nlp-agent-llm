@@ -195,10 +195,10 @@ class Agent:
 
         while self.in_talk_phase:
             # 残り回数チェック
-            if self.info and self.info.remain_count <= 0:
-                # Overを送信して終了
-                client.send("Over")
-                self.agent_logger.logger.info("残り回数が0のためOverを送信しました")
+            if self.info and self.info.remain_count is not None and self.info.remain_count <= 0:
+                if self.in_talk_phase:
+                    client.send("Over")
+                    self.agent_logger.logger.info("残り回数が0のためOverを送信しました")
                 break
 
             # トーク送信判断
@@ -210,12 +210,16 @@ class Agent:
                         timeout=10.0,
                     )
 
+                    # フェーズ終了チェック（生成中にphase endを受信した可能性）
+                    if not self.in_talk_phase:
+                        self.agent_logger.logger.info("トーク生成後にフェーズ終了を検出しました")
+                        break
+
                     if text and text.strip():
                         client.send(text)
                         self.last_talk_time = time.time()
                         self.agent_logger.logger.info("トークを送信しました: %s", text)
 
-                        # Overを送った場合は終了
                         if text.strip() == "Over":
                             self.agent_logger.logger.info("Overを送信したため終了します")
                             break
@@ -242,10 +246,10 @@ class Agent:
 
         while self.in_whisper_phase:
             # 残り回数チェック
-            if self.info and self.info.remain_count <= 0:
-                # Overを送信して終了
-                client.send("Over")
-                self.agent_logger.logger.info("残り回数が0のためOverを送信しました")
+            if self.info and self.info.remain_count is not None and self.info.remain_count <= 0:
+                if self.in_whisper_phase:
+                    client.send("Over")
+                    self.agent_logger.logger.info("残り回数が0のためOverを送信しました")
                 break
 
             # 囁き送信判断
@@ -257,12 +261,16 @@ class Agent:
                         timeout=10.0,
                     )
 
+                    # フェーズ終了チェック（生成中にphase endを受信した可能性）
+                    if not self.in_whisper_phase:
+                        self.agent_logger.logger.info("囁き生成後にフェーズ終了を検出しました")
+                        break
+
                     if text and text.strip():
                         client.send(text)
                         self.last_whisper_time = time.time()
                         self.agent_logger.logger.info("囁きを送信しました: %s", text)
 
-                        # Overを送った場合は終了
                         if text.strip() == "Over":
                             self.agent_logger.logger.info("Overを送信したため終了します")
                             break
