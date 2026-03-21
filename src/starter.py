@@ -93,7 +93,21 @@ def handle_game_session(
         raise
 
 
-async def handle_game_session_async(  # noqa: C901, PLR0912
+async def cancel_task(task: asyncio.Task[None] | None) -> None:
+    """Cancel and await an asyncio task if it is still running.
+
+    実行中のasyncioタスクをキャンセルして待機する.
+
+    Args:
+        task (asyncio.Task[None] | None): Task to cancel / キャンセル対象のタスク
+    """
+    if task and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+async def handle_game_session_async(
     client: Client,
     config: dict[str, Any],
     name: str,
@@ -133,32 +147,20 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
         match packet.request:
             # グループチャット方式
             case Request.TALK_PHASE_START:
-                if talk_task and not talk_task.done():
-                    talk_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await talk_task
+                await cancel_task(talk_task)
                 agent.in_talk_phase = True
                 talk_task = asyncio.create_task(agent.handle_talk_phase(send_with_lock))
             case Request.TALK_PHASE_END:
                 agent.in_talk_phase = False
-                if talk_task and not talk_task.done():
-                    talk_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await talk_task
+                await cancel_task(talk_task)
                 talk_task = None
             case Request.WHISPER_PHASE_START:
-                if whisper_task and not whisper_task.done():
-                    whisper_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await whisper_task
+                await cancel_task(whisper_task)
                 agent.in_whisper_phase = True
                 whisper_task = asyncio.create_task(agent.handle_whisper_phase(send_with_lock))
             case Request.WHISPER_PHASE_END:
                 agent.in_whisper_phase = False
-                if whisper_task and not whisper_task.done():
-                    whisper_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await whisper_task
+                await cancel_task(whisper_task)
                 whisper_task = None
             case Request.TALK_BROADCAST | Request.WHISPER_BROADCAST:
                 pass
@@ -173,11 +175,8 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
         if packet.request == Request.FINISH:
             agent.in_talk_phase = False
             agent.in_whisper_phase = False
-            for task in (talk_task, whisper_task):
-                if task and not task.done():
-                    task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await task
+            await cancel_task(talk_task)
+            await cancel_task(whisper_task)
             break
 
 
