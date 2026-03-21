@@ -54,8 +54,7 @@ class Agent:
         self.talk_history: list[Talk] = []
         self.whisper_history: list[Talk] = []
         self.role = role
-
-        # グループチャット方式用のフィールド
+        # グループチャット方式
         self.in_talk_phase = False
         self.in_whisper_phase = False
 
@@ -187,18 +186,13 @@ class Agent:
         """
         while self.in_talk_phase:
             if self.info and self.info.remain_count is not None and self.info.remain_count <= 0:
-                if self.in_talk_phase:
-                    send("Over")
                 break
 
             text = self.talk()
             if not self.in_talk_phase:
                 break
             send(text)
-            if text.strip() == "Over":
-                break
-
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(5)
 
     async def handle_whisper_phase(self, send: Callable[[str], None]) -> None:
         """Handle whisper phase in freeform mode.
@@ -210,18 +204,13 @@ class Agent:
         """
         while self.in_whisper_phase:
             if self.info and self.info.remain_count is not None and self.info.remain_count <= 0:
-                if self.in_whisper_phase:
-                    send("Over")
                 break
 
             text = self.whisper()
             if not self.in_whisper_phase:
                 break
             send(text)
-            if text.strip() == "Over":
-                break
-
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(5)
 
     def name(self) -> str:
         """Return response to name request.

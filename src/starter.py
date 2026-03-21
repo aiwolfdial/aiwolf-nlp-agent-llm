@@ -162,8 +162,6 @@ async def handle_game_session_async(  # noqa: C901
                 agent.in_whisper_phase = False
                 await cancel_task(whisper_task)
                 whisper_task = None
-            case Request.TALK_BROADCAST | Request.WHISPER_BROADCAST:
-                pass
             case _:
                 # 従来のリクエスト処理
                 # @timeoutデコレータ内でスレッドを使用しているため、asyncio.to_threadは不要
