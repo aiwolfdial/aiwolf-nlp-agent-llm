@@ -171,6 +171,13 @@ async def handle_game_session_async(  # noqa: C901, PLR0912
                     send_with_lock(req)
 
         if packet.request == Request.FINISH:
+            agent.in_talk_phase = False
+            agent.in_whisper_phase = False
+            for task in (talk_task, whisper_task):
+                if task and not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
             break
 
 
