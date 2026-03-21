@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 from utils.agent_utils import init_agent_from_packet
@@ -83,22 +86,95 @@ def handle_game_session(
         config (dict[str, Any]): Configuration dictionary / 設定辞書
         name (str): Agent name / エージェント名
     """
+    try:
+        asyncio.run(handle_game_session_async(client, config, name))
+    except Exception:
+        logger.exception("ゲームセッション中にエラーが発生しました")
+        raise
+
+
+async def cancel_task(task: asyncio.Task[None] | None) -> None:
+    """Cancel and await an asyncio task if it is still running.
+
+    実行中のasyncioタスクをキャンセルして待機する.
+
+    Args:
+        task (asyncio.Task[None] | None): Task to cancel / キャンセル対象のタスク
+    """
+    if task and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+async def handle_game_session_async(  # noqa: C901
+    client: Client,
+    config: dict[str, Any],
+    name: str,
+) -> None:
+    """Handle game session asynchronously.
+
+    ゲームセッションの非同期処理.
+
+    Args:
+        client (Client): Client instance / クライアントインスタンス
+        config (dict[str, Any]): Configuration dictionary / 設定辞書
+        name (str): Agent name / エージェント名
+    """
     agent: Agent | None = None
+    talk_task: asyncio.Task[None] | None = None
+    whisper_task: asyncio.Task[None] | None = None
+
+    send_lock = threading.Lock()
+
+    def send_with_lock(text: str) -> None:
+        with send_lock:
+            client.send(text)
+
     while True:
-        packet = client.receive()
+        packet = await asyncio.to_thread(client.receive)
+
         if packet.request == Request.NAME:
-            client.send(name)
+            send_with_lock(name)
             continue
+
         if packet.request == Request.INITIALIZE:
             agent = init_agent_from_packet(config, name, packet)
         if not agent:
             raise ValueError(agent, "エージェントが初期化されていません")
         agent.set_packet(packet)
-        req = agent.action()
-        agent.agent_logger.packet(agent.request, req)
-        if req:
-            client.send(req)
+
+        match packet.request:
+            # グループチャット方式
+            case Request.TALK_PHASE_START:
+                await cancel_task(talk_task)
+                agent.in_talk_phase = True
+                talk_task = asyncio.create_task(agent.handle_talk_phase(send_with_lock))
+            case Request.TALK_PHASE_END:
+                agent.in_talk_phase = False
+                await cancel_task(talk_task)
+                talk_task = None
+            case Request.WHISPER_PHASE_START:
+                await cancel_task(whisper_task)
+                agent.in_whisper_phase = True
+                whisper_task = asyncio.create_task(agent.handle_whisper_phase(send_with_lock))
+            case Request.WHISPER_PHASE_END:
+                agent.in_whisper_phase = False
+                await cancel_task(whisper_task)
+                whisper_task = None
+            case _:
+                # 従来のリクエスト処理
+                # @timeoutデコレータ内でスレッドを使用しているため、asyncio.to_threadは不要
+                req = agent.action()
+                agent.agent_logger.packet(agent.request, req)
+                if req:
+                    send_with_lock(req)
+
         if packet.request == Request.FINISH:
+            agent.in_talk_phase = False
+            agent.in_whisper_phase = False
+            await cancel_task(talk_task)
+            await cancel_task(whisper_task)
             break
 
 
