@@ -342,7 +342,7 @@ class Agent:
         Returns:
             str: Talk message / 発言メッセージ
         """
-        response = self._send_message_to_llm(self.request)
+        response = self._send_message_to_llm(Request.TALK)
         self.sent_talk_count = len(self.talk_history)
         return response or ""
 
