@@ -9,6 +9,19 @@ This is a sample agent using LLM for the AIWolf Competition (Natural Language Di
 > [!IMPORTANT]
 > Python 3.11 or higher is required.
 
+### Using uv
+
+```bash
+git clone https://github.com/aiwolfdial/aiwolf-nlp-agent-llm.git
+cd aiwolf-nlp-agent-llm
+cp config/.env.example config/.env
+uv sync
+```
+
+When using uv, replace `python src/main.py` with `uv run src/main.py` in the instructions below.
+
+### Without uv
+
 ```bash
 git clone https://github.com/aiwolfdial/aiwolf-nlp-agent-llm.git
 cd aiwolf-nlp-agent-llm
