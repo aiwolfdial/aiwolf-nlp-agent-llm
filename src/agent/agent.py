@@ -313,14 +313,14 @@ class Agent:
             case _:
                 raise ValueError(model_type, "Unknown LLM type")
         self.llm_model = self.llm_model
-        self._send_message_to_llm(self.request)
+        self._send_message_to_llm(Request.INITIALIZE)
 
     def daily_initialize(self) -> None:
         """Perform processing for daily initialization request.
 
         昼開始リクエストに対する処理を行う.
         """
-        self._send_message_to_llm(self.request)
+        self._send_message_to_llm(Request.DAILY_INITIALIZE)
 
     def whisper(self) -> str:
         """Return response to whisper request.
@@ -330,7 +330,7 @@ class Agent:
         Returns:
             str: Whisper message / 囁きメッセージ
         """
-        response = self._send_message_to_llm(self.request)
+        response = self._send_message_to_llm(Request.WHISPER)
         self.sent_whisper_count = len(self.whisper_history)
         return response or ""
 
@@ -351,7 +351,7 @@ class Agent:
 
         昼終了リクエストに対する処理を行う.
         """
-        self._send_message_to_llm(self.request)
+        self._send_message_to_llm(Request.DAILY_FINISH)
 
     def divine(self) -> str:
         """Return response to divine request.
@@ -361,7 +361,7 @@ class Agent:
         Returns:
             str: Agent name to divine / 占い対象のエージェント名
         """
-        return self._send_message_to_llm(self.request) or random.choice(  # noqa: S311
+        return self._send_message_to_llm(Request.DIVINE) or random.choice(  # noqa: S311
             self.get_alive_agents(),
         )
 
@@ -373,7 +373,7 @@ class Agent:
         Returns:
             str: Agent name to guard / 護衛対象のエージェント名
         """
-        return self._send_message_to_llm(self.request) or random.choice(  # noqa: S311
+        return self._send_message_to_llm(Request.GUARD) or random.choice(  # noqa: S311
             self.get_alive_agents(),
         )
 
@@ -385,7 +385,7 @@ class Agent:
         Returns:
             str: Agent name to vote / 投票対象のエージェント名
         """
-        return self._send_message_to_llm(self.request) or random.choice(  # noqa: S311
+        return self._send_message_to_llm(Request.VOTE) or random.choice(  # noqa: S311
             self.get_alive_agents(),
         )
 
@@ -397,7 +397,7 @@ class Agent:
         Returns:
             str: Agent name to attack / 襲撃対象のエージェント名
         """
-        return self._send_message_to_llm(self.request) or random.choice(  # noqa: S311
+        return self._send_message_to_llm(Request.ATTACK) or random.choice(  # noqa: S311
             self.get_alive_agents(),
         )
 
